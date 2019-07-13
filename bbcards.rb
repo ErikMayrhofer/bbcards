@@ -34,17 +34,20 @@ MM_PER_INCH=25.4
 #PAPER_HEIGHT = (MM_PER_INCH*11.0).mm
 #PAPER_WIDTH  = (MM_PER_INCH*8.5).mm
 
+PRINTER_MARGINS_HEIGHT = 4.32.mm
+PRINTER_MARGINS_WIDTH = PRINTER_MARGINS_HEIGHT
+
 PAPER_NAME   = "A4"
-PAPER_HEIGHT = 297.mm
-PAPER_WIDTH  = 210.mm
+PAPER_HEIGHT = 297.mm - 2 * PRINTER_MARGINS_HEIGHT
+PAPER_WIDTH  = 210.mm - 2 * PRINTER_MARGINS_WIDTH
 
 
-def get_card_geometry(card_width_inches=2.0, card_height_inches=2.0, rounded_corners=false, one_card_per_page=false)
+def get_card_geometry(card_width_mm=55, card_height_mm=68.6, rounded_corners=false, one_card_per_page=false, use_crosses=true)
 	card_geometry = Hash.new
 	#card_geometry["card_width"]        = (MM_PER_INCH*card_width_inches).mm
 	#card_geometry["card_height"]       = (MM_PER_INCH*card_height_inches).mm
-	card_geometry["card_width"]        = 55.mm
-	card_geometry["card_height"]       = 68.6.mm
+	card_geometry["card_width"]        = card_width_mm.mm
+	card_geometry["card_height"]       = card_height_mm.mm
 
 	card_geometry["rounded_corners"]   = rounded_corners ? ((1.0/8.0)*MM_PER_INCH).mm : rounded_corners
 	card_geometry["one_card_per_page"] = one_card_per_page
@@ -64,11 +67,13 @@ def get_card_geometry(card_width_inches=2.0, card_height_inches=2.0, rounded_cor
 	card_geometry["page_width"]   = card_geometry["card_width"] * card_geometry["cards_across"]
 	card_geometry["page_height"]  = card_geometry["card_height"] * card_geometry["cards_high"]
 
-	card_geometry["margin_left"]  = (card_geometry["paper_width"] - card_geometry["page_width"] ) / 2
-	card_geometry["margin_top"]   = (card_geometry["paper_height"] - card_geometry["page_height"] ) / 2
+	# card_geometry["margin_left"]  = [(card_geometry["paper_width"] - card_geometry["page_width"] ) / 2 - PRINTER_MARGINS_WIDTH, 0].max
+	# card_geometry["margin_top"]   = [(card_geometry["paper_height"] - card_geometry["page_height"] ) / 2 - PRINTER_MARGINS_HEIGHT, 0].max
+	card_geometry["margin_left"]  = 0
+	card_geometry["margin_top"]   = 0
 
 
-	card_geometry["cross_size"]   = 2
+	card_geometry["cross_size"]   = use_crosses ? 1.mm : use_crosses
 
 	card_geometry
 end
@@ -99,12 +104,10 @@ def draw_grid(pdf, card_geometry)
 				end
 			else
 				0.upto(card_geometry["cards_across"]) do |i|
-					0.upto(card_geometry["cards_high"]) do |j|
-						pdf.line(
-								[card_geometry["card_width"]*i, 0],
-								[card_geometry["card_width"]*i, card_geometry["page_height"]]
-						)
-					end
+					pdf.line(
+							[card_geometry["card_width"]*i, 0],
+							[card_geometry["card_width"]*i, card_geometry["page_height"]]
+					)
 				end
 				# Draw horizontal lines
 				0.upto(card_geometry["cards_high"]) do |i|
@@ -217,7 +220,7 @@ def render_card_page(pdf, card_geometry, icon, statements, is_black, black_as_wh
 			card_text = card_text.gsub("</color>", "[[[/color]]]")
 
 
-			card_text = card_text.gsub(/</, "&lt;");
+			card_text = card_text.gsub(/</, "&lt;")
 
 			
 			card_text = card_text.gsub("\[\[\[b\]\]\]", "<b>")
@@ -244,7 +247,7 @@ def render_card_page(pdf, card_geometry, icon, statements, is_black, black_as_wh
 			parts = card_text.split(/\[\[/)
 			card_text = ""
 			first = true
-			previous_matches = false
+			# previous_matches = false
 			parts.each do |p|
 				n = p
 				this_matches=false
@@ -385,24 +388,23 @@ def load_pages_from_lines(lines, card_geometry)
  		pages << lines[pn*cards_per_page,cards_per_page]
     	end
 
-	return pages
+	pages
 
 end
 
 
 def load_pages_from_string(string, card_geometry)
 	lines = string.split(/[\r\n]+/)
-	pages = load_pages_from_lines(lines, card_geometry)
-	return pages
+	load_pages_from_lines(lines, card_geometry)
 end
 
 def load_pages_from_file(file, card_geometry)
 	pages = []
 	if File.exist?(file)
 		lines = IO.readlines(file)
-		pages = load_pages_from_lines(lines, card_geometry);
+		pages = load_pages_from_lines(lines, card_geometry)
 	end
-	return pages
+	pages
 end
 
 
@@ -432,25 +434,25 @@ def load_ttf_fonts(font_dir, font_families)
 			name = name.gsub(/_Bold$/, "")
 		end
 
-		name = name.gsub(/_/, " ");
+		name = name.gsub(/_/, " ")
 
-		if not (font_files.has_key? name)
+		unless font_files.has_key? name
 			font_files[name] = Hash.new
 		end
 		font_files[name][style] = ttf
 	end
 
-	font_files.each_pair do |name, ttf_files|
-		if (ttf_files.has_key? "normal" ) and (not font_families.has_key? "name" )
-			normal = ttf_files["normal"]
-			italic = (ttf_files.has_key? "italic") ?  ttf_files["italic"] : normal
-			bold   = (ttf_files.has_key? "bold"  ) ?  ttf_files["bold"]   : normal
+	font_files.each_pair do |name, font_file|
+		if (font_file.has_key? "normal" ) and (not font_families.has_key? "name" )
+			normal = font_file["normal"]
+			italic = (font_file.has_key? "italic") ?  font_file["italic"] : normal
+			bold   = (font_file.has_key? "bold"  ) ?  font_file["bold"]   : normal
 			bold_italic = normal
-			if ttf_files.has_key? 'bold_italic'
-				bold_italic = ttf_files["bold_italic"]
-			elsif ttf_files.has_key? 'italic'
+			if font_file.has_key? 'bold_italic'
+				bold_italic = font_file["bold_italic"]
+			elsif font_file.has_key? 'italic'
 				bold_italic = italic
-			elsif ttf_files.has_key? 'bold'
+			elsif font_file.has_key? 'bold'
 				bold_italic = bold
 			end
 			
@@ -467,24 +469,24 @@ def load_ttf_fonts(font_dir, font_families)
 end
 
 
-def render_cards(directory=".", white_file="white.txt", black_file="black.txt", icon_file="icon.png", output_file="cards.pdf", input_files_are_absolute=false, output_file_name_from_directory=true, recurse=true, card_geometry=get_card_geometry, white_string="", black_string="", output_to_stdout=false, title=nil )
+def render_cards(directory=".", white_file="white.txt", black_file="black.txt", icon_file="icon.png", output_file="cards.pdf", input_files_absolute=false, dirname_to_outfile=true, recurse=true, card_geometry=get_card_geometry, white_string="", black_string="", output_to_stdout=false, title=nil )
 	
 	original_white_file = white_file
 	original_black_file = black_file
 	original_icon_file = icon_file
-	if not input_files_are_absolute
+	unless input_files_absolute
 		white_file = directory + File::Separator + white_file
 		black_file = directory + File::Separator + black_file
-		icon_file  = directory + File::Separator + icon_file
+		icon_file = directory + File::Separator + icon_file
 	end
 
-	if not File.exist? icon_file
+	unless File.exist? icon_file
 		icon_file = "./default.png"
 	end
 
 
-	if not directory.nil?
-		if File.exist?(directory) and directory != "." and output_file_name_from_directory
+	unless directory.nil?
+		if File.exist?(directory) and directory != "." and dirname_to_outfile
 			output_file = directory.split(File::Separator).pop + ".pdf"
 		end
 	end
@@ -497,8 +499,8 @@ def render_cards(directory=".", white_file="white.txt", black_file="black.txt", 
 	
 
 	
-	white_pages = []
-	black_pages = []
+	# white_pages = []
+	# black_pages = []
 	if white_file == nil and black_file == nil and white_string == "" and black_string == ""
 		white_string = " "
 		black_string = " "
@@ -547,7 +549,7 @@ def render_cards(directory=".", white_file="white.txt", black_file="black.txt", 
 		end
 	end
 
-	if (not input_files_are_absolute) and recurse
+	if (not input_files_absolute) and recurse
 		files_in_dir =Dir.glob(directory + File::Separator + "*")
 		files_in_dir.each do |subdir|
 			if File.directory? subdir
@@ -585,7 +587,7 @@ def parse_args(variables=Hash.new, flags=Hash.new, save_orphaned=false, argv=ARG
 		argv.push new_argv.shift
 	end
 
-	return parsed_args
+	parsed_args
 end
 
 
@@ -616,8 +618,8 @@ def print_help
 	puts ""
 	puts "You may specify the card size by passing either the --small"
 	puts " or --large flag.  If you pass the --small flag then small"
-	puts "cards of size 2\"x2\" will be produced. If you pass the --large"
-	puts "flag larger cards of size 2.5\"x3.5\" will be produced. Small"
+	puts "cards of size 5cm x 5cm will be produced. If you pass the --large"
+	puts "flag larger cards of size 55mm x 68.6mm will be produced. Small"
 	puts "cards are produced by default."
 	puts ""
 	puts "All flags:"
@@ -625,9 +627,9 @@ def print_help
 	puts "\t-d,--dir\t\tDirectory to search for card files"
 	puts "\t-h,--help\t\tPrint this Help message"
 	puts "\t-i,--icon\t\tIcon file, should be .jpg or .png"
-	puts "\t-l,--large\t\tGenerate large 2.5\"x3.5\" cards"
+	puts "\t-l,--large\t\tGenerate large 55mm x 68.6mm cards"
 	puts "\t-o,--output\t\tOutput file, will be a .pdf file"
-	puts "\t-s,--small\t\tGenerate small 2\"x2\" cards"
+	puts "\t-s,--small\t\tGenerate small 5cm x 5cm cards"
 	puts "\t-w,--white\t\tWhite card file"
 	puts ""
 	
@@ -646,20 +648,19 @@ if not (ENV['REQUEST_URI']).nil?
 	page_layout = cgi["pagelayout"]
 	icon = "default.png"
 	if cgi["icon"] != "default"
-		params = cgi.params
+		# params = cgi.params
 		tmpfile = cgi.params["iconfile"].first
-		if not tmpfile.nil?
-			icon = "/tmp/" + (rand().to_s) + "-" + tmpfile.original_filename
+		unless tmpfile.nil?
+			icon = "/tmp/" + (rand.to_s) + "-" + tmpfile.original_filename
 			File.open(icon.untaint, "w") do |f|
-    				f << tmpfile.read(1024*1024)
+				f << tmpfile.read(1024 * 1024)
 			end
 		end
 	end
-	
-	
+
 	one_per_page    = page_layout == "oneperpage" ? true : false
 	rounded_corners = card_size    == "LR"         ? true : false
-	card_geometry   = card_size    == "S" ? get_card_geometry(2.0,2.0,rounded_corners,one_per_page) : get_card_geometry(2.5,3.5,rounded_corners,one_per_page)
+	card_geometry   = card_size    == "S" ? get_card_geometry(50.0,50.0,rounded_corners,one_per_page) : get_card_geometry(55.0,68.6,rounded_corners,one_per_page)
 	
 	render_cards nil, nil, nil, icon, "cards.pdf", true, false, false, card_geometry, white_cards, black_cards, true
 
@@ -694,9 +695,9 @@ else
 
 
 	args = parse_args(arg_defs, flag_defs)
-	card_geometry = get_card_geometry(2.0,2.0, !(args["rounded"]).nil?, !(args["oneperpage"]).nil? )
+	card_geometry = get_card_geometry(50.0, 50.0, !(args["rounded"]).nil?, !(args["oneperpage"]).nil? )
 	if args.has_key? "large"
-		card_geometry = get_card_geometry(2.5,3.5, (not (args["rounded"]).nil?), (not (args["oneperpage"]).nil? ))
+		card_geometry = get_card_geometry(55.0,68.6, (not (args["rounded"]).nil?), (not (args["oneperpage"]).nil? ))
 	end
 	
 	if args.has_key? "help" or args.length == 0 or ( (not args.has_key? "white") and (not args.has_key? "black") and (not args.has_key? "dir") )
